@@ -132,10 +132,9 @@
             font-weight: bold;
             font-family: inherit;
             cursor: pointer;
-            display: none;
             width: 100%;
         }
-        #reward-btn  { background: #2ecc71; }
+        #reward-btn  { background: #2ecc71; visibility: hidden; }
         #auth-banner {
             display: none;
             background: #f0e9e0;
@@ -265,12 +264,17 @@ function resize() {
     const vw  = vvp ? vvp.width  : document.documentElement.clientWidth;
     const vh  = vvp ? vvp.height : document.documentElement.clientHeight;
 
-    const headerRatio = 0.14;
-    const gapRatio    = 0.025;
-    const sidePad     = Math.round(vw * 0.05); // 5% отступ по бокам
-    const fieldW = vw - sidePad * 2;
-    const fieldH = vh * (1 - headerRatio - gapRatio * 3);
-    const S = Math.floor(Math.min(fieldW, fieldH, 460));
+    const isLandscape  = vw > vh;
+    const headerRatio  = isLandscape ? 0.18 : 0.14;
+    const gapRatio     = isLandscape ? 0.02  : 0.025;
+    const sidePad      = (vw < 600) ? Math.round(vw * 0.05) : 0;
+    const fieldW       = vw - sidePad * 2;
+    // Всегда резервируем место под кнопку удвоения (10% высоты + зазоры)
+    // чтобы поле не прыгало когда кнопка появляется
+    const btnRatio     = 0.10;
+    const reservedH    = vh * (headerRatio + btnRatio + gapRatio * 4);
+    const fieldH       = vh - reservedH;
+    const S            = Math.floor(Math.min(fieldW, fieldH));
 
     const wrapper = document.getElementById('wrapper');
     const field   = document.getElementById('game-container');
@@ -320,7 +324,6 @@ function resize() {
     const btnH   = Math.round(S * 0.1);
     const btnFs  = Math.round(S * 0.04);
     const btnPad = Math.round(S * 0.025);
-    const isLandscape = vw > vh;
     ['reward-btn'].forEach(id => {
         const el = document.getElementById(id);
         el.style.height       = btnH + 'px';
@@ -363,14 +366,19 @@ window.addEventListener('orientationchange', () => {
 });
 
 /* ─── SDK ─── */
-function notifyReady() {
-    if (sdk && sdk.features && sdk.features.LoadingAPI) sdk.features.LoadingAPI.ready();
+function gameplayStart() {
+    if (sdk) sdk.features.GameplayAPI?.start();
+}
+function gameplayStop() {
+    if (sdk) sdk.features.GameplayAPI?.stop();
 }
 
 YaGames.init().then(_sdk => {
     sdk = _sdk;
     lang = sdk.environment.i18n.lang === 'ru' ? 'ru' : 'en';
     applyLang();
+    // Game Ready API — вызываем сразу после init, до загрузки игрока
+    sdk.features.LoadingAPI?.ready();
     sdk.adv.showFullscreenAdv();
     return sdk.getPlayer();
 }).then(_player => {
@@ -378,10 +386,10 @@ YaGames.init().then(_sdk => {
     return player.getData(['highScore']);
 }).then(data => {
     if (data.highScore) highScore = data.highScore;
-    initGame(); notifyReady();
+    initGame();
 }).catch(() => {
     try { const v = localStorage.getItem('2048_hs'); if (v) highScore = +v || 0; } catch(e){}
-    initGame(); notifyReady();
+    initGame();
 });
 
 /* ─── LANG ─── */
@@ -403,10 +411,11 @@ function initGame() {
     board = Array(16).fill(0);
     score = 0; isRewardUsed = false; isSecondChanceUsed = false;
     document.getElementById('modal').style.display      = 'none';
-    document.getElementById('reward-btn').style.display = 'none';
+    document.getElementById('reward-btn').style.visibility = 'hidden';
     document.getElementById('auth-banner').style.display= 'none';
     resize();
     addTile(); addTile(); render();
+    gameplayStart(); // геймплей начался
 }
 
 function addTile() {
@@ -435,7 +444,7 @@ function render() {
     });
     document.getElementById('score').textContent      = score;
     document.getElementById('high-score').textContent = highScore;
-    if (score >= 500 && !isRewardUsed) document.getElementById('reward-btn').style.display = 'block';
+    if (score >= 500 && !isRewardUsed) document.getElementById('reward-btn').style.visibility = 'visible';
     if (score > 0 && board.includes(2048)) saveStats();
 }
 
@@ -485,7 +494,10 @@ function showModal(title, extra) {
 /* ─── BUTTONS ─── */
 document.getElementById('btn-restart').onclick = () => {
     saveStats();
-    if (sdk) sdk.adv.showFullscreenAdv({ callbacks:{ onClose: initGame } });
+    if (sdk) sdk.adv.showFullscreenAdv({ callbacks:{
+        onOpen:  () => gameplayStop(),  // реклама показывается
+        onClose: () => initGame()       // initGame вызывает gameplayStart
+    }});
     else initGame();
 };
 
@@ -504,7 +516,7 @@ document.getElementById('reward-btn').onclick = () => {
     if (!sdk) return;
     sdk.adv.showRewardedVideo({ callbacks:{ onRewarded() {
         score *= 2; isRewardUsed = true;
-        document.getElementById('reward-btn').style.display = 'none';
+        document.getElementById('reward-btn').style.visibility = 'hidden';
         render();
     }}});
 };
@@ -561,7 +573,14 @@ function saveStats() {
     }
 }
 
-document.addEventListener('visibilitychange', ()=>{ if (document.hidden) saveStats(); });
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        gameplayStop();
+        saveStats();
+    } else {
+        gameplayStart();
+    }
+});
 window.addEventListener('beforeunload', saveStats);
 
 /* ─── INPUT ─── */
