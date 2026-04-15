@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>2048: Эволюция и Рекорды</title>
+    <script src="https://yandex.ru/games/sdk/v2"></script>
+    <style>
+        :root {
+            --bg: #bbada0;
+            --empty: #cdc1b4;
+            --text: #776e65;
+            --accent: #f65e3b;
+        }
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            outline: none;
+            margin: 0; padding: 0;
+        }
+        html {
+            width: 100%; height: 100%;
+            height: -webkit-fill-available;
+        }
+        body {
+            width: 100%; height: 100%;
+            min-height: 100vh;
+            min-height: -webkit-fill-available;
+            background: #faf8ef;
+            font-family: "Clear Sans", Arial, sans-serif;
+            touch-action: none;
+            overflow: hidden;
+            /* Центрируем враппер */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding:
+                env(safe-area-inset-top, 0px)
+                env(safe-area-inset-right, 0px)
+                env(safe-area-inset-bottom, 0px)
+                env(safe-area-inset-left, 0px);
+        }
+
+        /*
+         * #wrapper — единственный элемент внутри body.
+         * Его размер полностью задаётся через JS.
+         * Все дочерние элементы растянуты на его ширину.
+         */
+        #wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0;
+        }
+
+        /* ───── ХЕДЕР ───── */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .title-group {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .title-main {
+            display: flex;
+            align-items: baseline;
+        }
+        .title-num   { font-weight: 900; color: var(--text); line-height: 1; }
+        .title-colon { font-weight: 900; color: var(--accent); line-height: 1; }
+        .title-sub   { font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #8f857b; white-space: nowrap; }
+
+        .score-container { display: flex; }
+        .score-box {
+            background: var(--bg);
+            border-radius: 4px;
+            color: white;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .score-label { text-transform: uppercase; display: block; opacity: 0.85; font-weight: 700; }
+        .score-val   { font-weight: bold; display: block; }
+
+        /* ───── ИГРОВОЕ ПОЛЕ ───── */
+        #game-container {
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 0; /* padding задаётся через JS */
+            flex-shrink: 0;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            width: 100%;
+            height: 100%;
+        }
+        .cell {
+            background: var(--empty);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: var(--text);
+        }
+        .tile-2   { background: #eee4da; }
+        .tile-4   { background: #ede0c8; }
+        .tile-8   { background: #f2b179; color: #fff; }
+        .tile-16  { background: #f59563; color: #fff; }
+        .tile-32  { background: #f67c5f; color: #fff; }
+        .tile-64  { background: #f65e3b; color: #fff; }
+        .tile-128 { background: #edcf72; color: #fff; }
+        .tile-256 { background: #edcc61; color: #fff; }
+        .tile-512 { background: #edc850; color: #fff; }
+        .tile-1024{ background: #edc53f; color: #fff; }
+        .tile-2048{ background: #edc22e; color: #fff; box-shadow: 0 0 20px rgba(237,194,46,.6); }
+
+        /* ───── КНОПКИ ───── */
+        .game-btn {
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            font-family: inherit;
+            cursor: pointer;
+            display: none;
+            width: 100%;
+        }
+        #reward-btn  { background: #2ecc71; }
+        #auth-banner {
+            display: none;
+            background: #f0e9e0;
+            border-radius: 6px;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+        }
+        #auth-banner span { color: #776e65; line-height: 1.3; }
+        #auth-btn {
+            background: var(--accent);
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            font-family: inherit;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        /* ───── МОДАЛКА ───── */
+        #modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.7);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 300px;
+        }
+        .modal-content h2 { color: var(--text); margin-bottom: 8px; }
+        .modal-content p  { color: var(--text); margin-bottom: 12px; }
+        .controls { display: flex; flex-direction: column; gap: 8px; }
+        .controls button {
+            padding: 12px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: inherit;
+        }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+<div id="wrapper">
+    <header id="header">
+        <div class="title-group">
+            <div class="title-main">
+                <span class="title-num">2048</span><span class="title-colon">:</span>
+            </div>
+            <span class="title-sub" id="title-sub">Эволюция и Рекорды</span>
+        </div>
+        <div class="score-container" id="score-container">
+            <div class="score-box" id="box-score">
+                <span class="score-label" id="txt-score">Счет</span>
+                <span class="score-val"   id="score">0</span>
+            </div>
+            <div class="score-box" id="box-best">
+                <span class="score-label" id="txt-best">Рекорд</span>
+                <span class="score-val"   id="high-score">0</span>
+            </div>
+        </div>
+    </header>
+
+    <div id="game-container">
+        <div class="grid" id="grid"></div>
+    </div>
+
+    <button class="game-btn" id="reward-btn">X2 Score 📺</button>
+
+    <div id="auth-banner">
+        <span id="auth-text">Войдите чтобы сохранить рекорд в таблицу</span>
+        <button id="auth-btn">Войти 🏆</button>
+    </div>
+</div>
+
+<div id="modal">
+    <div class="modal-content">
+        <h2 id="modal-title">Игра окончена</h2>
+        <p  id="modal-body"></p>
+        <div class="controls">
+            <button id="btn-extra"   style="display:none; background:#2ecc71;">Второй шанс 📺</button>
+            <button id="btn-auth-modal" style="display:none; background:#8f857b;">Войти и сохранить 🏆</button>
+            <button id="btn-restart">Начать заново</button>
+        </div>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+/* ─── STATE ─── */
+let sdk, player, lang = 'ru';
+let board = Array(16).fill(0);
+let score = 0, highScore = 0;
+let isRewardUsed = false, isSecondChanceUsed = false;
+
+/* ─── I18N ─── */
+const i18n = {
+    ru: { score:'Счет', best:'Рекорд', over:'Игра окончена', restart:'Заново',
+          second:'Второй шанс 📺', x2:'Удвоить счет 📺', sub:'Эволюция и Рекорды',
+          authText:'Войдите чтобы сохранить рекорд в таблицу', authBtn:'Войти 🏆',
+          authModal:'Войти и сохранить 🏆' },
+    en: { score:'Score', best:'Best', over:'Game Over', restart:'Restart',
+          second:'Second Chance 📺', x2:'Double Score 📺', sub:'Evolution & Records',
+          authText:'Sign in to save your score to the leaderboard', authBtn:'Sign in 🏆',
+          authModal:'Sign in & Save 🏆' }
+};
+
+/* ─── RESIZE ─── */
+function resize() {
+    // Используем visualViewport — самый точный источник размера на мобильных
+    // при повороте, появлении клавиатуры и т.д.
+    const vvp = window.visualViewport;
+    const vw  = vvp ? vvp.width  : document.documentElement.clientWidth;
+    const vh  = vvp ? vvp.height : document.documentElement.clientHeight;
+
+    const headerRatio = 0.14;
+    const gapRatio    = 0.025;
+    const sidePad     = Math.round(vw * 0.05); // 5% отступ по бокам
+    const fieldW = vw - sidePad * 2;
+    const fieldH = vh * (1 - headerRatio - gapRatio * 3);
+    const S = Math.floor(Math.min(fieldW, fieldH, 460));
+
+    const wrapper = document.getElementById('wrapper');
+    const field   = document.getElementById('game-container');
+    const header  = document.getElementById('header');
+
+    // Враппер — ширина = S, это центрирует всё через body flexbox
+    wrapper.style.width = S + 'px';
+    wrapper.style.gap   = Math.round(S * gapRatio) + 'px';
+
+    // Поле
+    const pad  = Math.max(6, Math.round(S * 0.02));
+    const gap  = Math.max(4, Math.round(S * 0.018));
+    field.style.width   = S + 'px';
+    field.style.height  = S + 'px';
+    field.style.padding = pad + 'px';
+    field.style.borderRadius = Math.round(S * 0.015) + 'px';
+    document.querySelector('.grid').style.gap = gap + 'px';
+
+    // Хедер — высота = S * headerRatio
+    const hH = Math.round(S * headerRatio);
+    header.style.height = hH + 'px';
+
+    // Шрифт заголовка
+    const titleFs = Math.round(S * 0.105);
+    document.querySelector('.title-num').style.fontSize   = titleFs + 'px';
+    document.querySelector('.title-colon').style.fontSize = titleFs + 'px';
+    document.querySelector('.title-sub').style.fontSize   = Math.round(titleFs * 0.27) + 'px';
+
+    // Score-боксы
+    const sc = document.getElementById('score-container');
+    const boxGap = Math.round(S * 0.015);
+    const boxW   = Math.round(S * 0.2);
+    sc.style.gap = boxGap + 'px';
+    ['box-score','box-best'].forEach(id => {
+        const el = document.getElementById(id);
+        el.style.width        = boxW + 'px';
+        el.style.height       = hH + 'px';
+        el.style.borderRadius = Math.round(S * 0.012) + 'px';
+        el.style.padding      = '2px 6px';
+    });
+    const valFs = Math.round(S * 0.05);
+    const lblFs = Math.round(S * 0.028);
+    document.querySelectorAll('.score-val').forEach(el => el.style.fontSize = valFs + 'px');
+    document.querySelectorAll('.score-label').forEach(el => el.style.fontSize = lblFs + 'px');
+
+    // Кнопки под полем
+    const btnH   = Math.round(S * 0.1);
+    const btnFs  = Math.round(S * 0.04);
+    const btnPad = Math.round(S * 0.025);
+    const isLandscape = vw > vh;
+    ['reward-btn'].forEach(id => {
+        const el = document.getElementById(id);
+        el.style.height       = btnH + 'px';
+        el.style.fontSize     = btnFs + 'px';
+        el.style.borderRadius = Math.round(S * 0.012) + 'px';
+        // В альбомной — добавляем отступ снизу чтобы кнопка не липла к краю
+        el.style.marginBottom = isLandscape ? Math.round(vh * 0.04) + 'px' : '0px';
+    });
+    const ab = document.getElementById('auth-banner');
+    ab.style.padding      = btnPad + 'px';
+    ab.style.borderRadius = Math.round(S * 0.012) + 'px';
+    ab.style.gap          = boxGap + 'px';
+    document.getElementById('auth-text').style.fontSize = Math.round(S * 0.032) + 'px';
+    const authBtn = document.getElementById('auth-btn');
+    authBtn.style.padding  = btnPad * 0.6 + 'px ' + btnPad + 'px';
+    authBtn.style.fontSize = Math.round(S * 0.035) + 'px';
+
+    // Шрифт плиток пропорционально ячейке
+    const cellS  = (S - pad * 2 - gap * 3) / 4;
+    const cellFs = Math.round(cellS * 0.45);
+    document.querySelectorAll('.cell').forEach(el => {
+        el.style.fontSize     = cellFs + 'px';
+        el.style.borderRadius = Math.round(cellS * 0.08) + 'px';
+    });
+}
+
+// resize — слушаем visualViewport если есть (точнее на iOS/Android)
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', resize);
+    window.visualViewport.addEventListener('scroll', resize);
+} else {
+    window.addEventListener('resize', resize);
+}
+// orientationchange — ждём несколько кадров пока браузер пересчитает viewport
+window.addEventListener('orientationchange', () => {
+    // Пробуем 3 раза с нарастающей задержкой
+    setTimeout(resize, 100);
+    setTimeout(resize, 300);
+    setTimeout(resize, 600);
+});
+
+/* ─── SDK ─── */
+function notifyReady() {
+    if (sdk && sdk.features && sdk.features.LoadingAPI) sdk.features.LoadingAPI.ready();
+}
+
+YaGames.init().then(_sdk => {
+    sdk = _sdk;
+    lang = sdk.environment.i18n.lang === 'ru' ? 'ru' : 'en';
+    applyLang();
+    sdk.adv.showFullscreenAdv();
+    return sdk.getPlayer();
+}).then(_player => {
+    player = _player;
+    return player.getData(['highScore']);
+}).then(data => {
+    if (data.highScore) highScore = data.highScore;
+    initGame(); notifyReady();
+}).catch(() => {
+    try { const v = localStorage.getItem('2048_hs'); if (v) highScore = +v || 0; } catch(e){}
+    initGame(); notifyReady();
+});
+
+/* ─── LANG ─── */
+function applyLang() {
+    const t = i18n[lang];
+    document.getElementById('txt-score').textContent  = t.score;
+    document.getElementById('txt-best').textContent   = t.best;
+    document.getElementById('btn-restart').textContent = t.restart;
+    document.getElementById('btn-extra').textContent   = t.second;
+    document.getElementById('reward-btn').textContent  = t.x2;
+    document.getElementById('title-sub').textContent   = t.sub;
+    document.getElementById('auth-text').textContent      = t.authText;
+    document.getElementById('auth-btn').textContent       = t.authBtn;
+    document.getElementById('btn-auth-modal').textContent = t.authModal;
+}
+
+/* ─── GAME ─── */
+function initGame() {
+    board = Array(16).fill(0);
+    score = 0; isRewardUsed = false; isSecondChanceUsed = false;
+    document.getElementById('modal').style.display      = 'none';
+    document.getElementById('reward-btn').style.display = 'none';
+    document.getElementById('auth-banner').style.display= 'none';
+    resize();
+    addTile(); addTile(); render();
+}
+
+function addTile() {
+    const empty = board.map((v,i) => v===0?i:null).filter(v=>v!==null);
+    if (empty.length) board[empty[Math.floor(Math.random()*empty.length)]] = Math.random()>.1 ? 2 : 4;
+}
+
+function render() {
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    // Пересчитываем размер ячеек из текущего поля
+    const field  = document.getElementById('game-container');
+    const S      = field.offsetWidth || 300;
+    const pad    = Math.max(6, Math.round(S * 0.02));
+    const gap    = Math.max(4, Math.round(S * 0.018));
+    const cellS  = (S - pad * 2 - gap * 3) / 4;
+    const cellFs = Math.round(cellS * 0.45);
+
+    board.forEach(val => {
+        const cell = document.createElement('div');
+        cell.className   = 'cell' + (val ? ' tile-'+val : '');
+        cell.textContent = val || '';
+        cell.style.fontSize     = cellFs + 'px';
+        cell.style.borderRadius = Math.round(cellS * 0.08) + 'px';
+        grid.appendChild(cell);
+    });
+    document.getElementById('score').textContent      = score;
+    document.getElementById('high-score').textContent = highScore;
+    if (score >= 500 && !isRewardUsed) document.getElementById('reward-btn').style.display = 'block';
+    if (score > 0 && board.includes(2048)) saveStats();
+}
+
+function move(dir) {
+    let changed = false;
+    const N = 4;
+    for (let i = 0; i < N; i++) {
+        let row = [];
+        for (let j = 0; j < N; j++) {
+            const idx = (dir==='UP'||dir==='DOWN') ? j*N+i : i*N+j;
+            row.push(board[idx]);
+        }
+        if (dir==='RIGHT'||dir==='DOWN') row.reverse();
+        let r = row.filter(v=>v);
+        for (let j = 0; j < r.length-1; j++) {
+            if (r[j]===r[j+1]) { r[j]*=2; score+=r[j]; r.splice(j+1,1); changed=true; }
+        }
+        while (r.length<N) r.push(0);
+        if (dir==='RIGHT'||dir==='DOWN') r.reverse();
+        for (let j = 0; j < N; j++) {
+            const idx = (dir==='UP'||dir==='DOWN') ? j*N+i : i*N+j;
+            if (board[idx]!==r[j]) changed=true;
+            board[idx]=r[j];
+        }
+    }
+    if (changed) { addTile(); render(); checkEnd(); }
+}
+
+function checkEnd() {
+    if (board.includes(0)) return;
+    for (let i=0;i<16;i++) {
+        if (i%4!==3 && board[i]===board[i+1]) return;
+        if (i<12   && board[i]===board[i+4]) return;
+    }
+    saveStats();
+    showModal(i18n[lang].over, !isSecondChanceUsed);
+}
+
+function showModal(title, extra) {
+    document.getElementById('modal').style.display          = 'flex';
+    document.getElementById('modal-title').textContent      = title;
+    document.getElementById('modal-body').textContent       = i18n[lang].score + ': ' + score;
+    document.getElementById('btn-extra').style.display      = extra ? 'block' : 'none';
+    document.getElementById('btn-auth-modal').style.display = !isAuthorized() ? 'block' : 'none';
+}
+
+/* ─── BUTTONS ─── */
+document.getElementById('btn-restart').onclick = () => {
+    saveStats();
+    if (sdk) sdk.adv.showFullscreenAdv({ callbacks:{ onClose: initGame } });
+    else initGame();
+};
+
+document.getElementById('btn-extra').onclick = () => {
+    if (!sdk) return;
+    sdk.adv.showRewardedVideo({ callbacks:{ onRewarded() {
+        isSecondChanceUsed = true;
+        const occ = board.map((v,i)=>v?i:null).filter(v=>v!==null);
+        occ.sort(()=>Math.random()-.5).slice(0,4).forEach(i=>board[i]=0);
+        document.getElementById('modal').style.display = 'none';
+        render();
+    }}});
+};
+
+document.getElementById('reward-btn').onclick = () => {
+    if (!sdk) return;
+    sdk.adv.showRewardedVideo({ callbacks:{ onRewarded() {
+        score *= 2; isRewardUsed = true;
+        document.getElementById('reward-btn').style.display = 'none';
+        render();
+    }}});
+};
+
+document.getElementById('btn-auth-modal').onclick = () => {
+    if (!sdk) return;
+    document.getElementById('modal').style.display = 'none';
+    sdk.auth.openAuthDialog()
+        .then(()=>sdk.getPlayer())
+        .then(_p => {
+            player = _p;
+            if (isAuthorized()) {
+                player.setData({ highScore });
+                sdk.getLeaderboards().then(l=>l.setLeaderboardScore('TopPlayers', highScore)).catch(()=>{});
+                document.getElementById('auth-banner').style.display = 'none';
+            }
+        }).catch(()=>{
+            document.getElementById('modal').style.display = 'flex';
+        });
+};
+
+document.getElementById('auth-btn').onclick = () => {
+    if (!sdk) return;
+    sdk.auth.openAuthDialog()
+        .then(()=>sdk.getPlayer())
+        .then(_p => {
+            player = _p;
+            if (isAuthorized()) {
+                player.setData({ highScore });
+                sdk.getLeaderboards().then(l=>l.setLeaderboardScore('TopPlayers', highScore)).catch(()=>{});
+                document.getElementById('auth-banner').style.display = 'none';
+            }
+        }).catch(()=>{});
+};
+
+/* ─── SAVE ─── */
+function isAuthorized() { return player && player.getMode()!=='lite'; }
+
+function saveStats() {
+    if (score <= highScore) return;
+    highScore = score;
+    document.getElementById('high-score').textContent = highScore;
+    if (isAuthorized()) {
+        player.setData({ highScore });
+        if (sdk) sdk.getLeaderboards().then(l=>l.setLeaderboardScore('TopPlayers', highScore)).catch(()=>{});
+        document.getElementById('auth-banner').style.display  = 'none';
+        document.getElementById('btn-auth-modal').style.display = 'none';
+    } else {
+        try { localStorage.setItem('2048_hs', highScore); } catch(e){}
+        // Показываем баннер только если модалка не открыта
+        const modalOpen = document.getElementById('modal').style.display === 'flex';
+        if (!modalOpen) document.getElementById('auth-banner').style.display = 'flex';
+        document.getElementById('btn-auth-modal').style.display = 'block';
+    }
+}
+
+document.addEventListener('visibilitychange', ()=>{ if (document.hidden) saveStats(); });
+window.addEventListener('beforeunload', saveStats);
+
+/* ─── INPUT ─── */
+const KEY = {
+    ArrowUp:'UP', ArrowDown:'DOWN', ArrowLeft:'LEFT', ArrowRight:'RIGHT',
+    KeyW:'UP', KeyS:'DOWN', KeyA:'LEFT', KeyD:'RIGHT'
+};
+function onKey(e) {
+    if (KEY[e.code]) { e.preventDefault(); e.stopPropagation(); move(KEY[e.code]); }
+}
+document.addEventListener('keydown', onKey, true);
+window.addEventListener('keydown', onKey, true);
+
+let t0 = null;
+
+function isInteractive(el) {
+    while (el && el !== document.body) {
+        const tag = el.tagName;
+        if (tag === 'BUTTON' || tag === 'A' || tag === 'INPUT' || tag === 'SELECT') return true;
+        if (el.id === 'modal' || el.id === 'auth-banner' || el.id === 'reward-btn') return true;
+        el = el.parentElement;
+    }
+    return false;
+}
+
+window.addEventListener('touchstart', e => {
+    if (isInteractive(e.target)) { t0 = null; return; }
+    e.preventDefault();
+    t0 = e.touches[0];
+}, {passive:false});
+
+window.addEventListener('touchend', e => {
+    if (!t0) return;
+    const dx = e.changedTouches[0].clientX - t0.clientX;
+    const dy = e.changedTouches[0].clientY - t0.clientY;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) > 30) {
+        move(Math.abs(dx)>Math.abs(dy) ? (dx>0?'RIGHT':'LEFT') : (dy>0?'DOWN':'UP'));
+    }
+    t0 = null;
+}, {passive:false});
+
+/* ─── INIT ─── */
+// Запускаем resize как только DOM готов, без ожидания SDK
+document.addEventListener('DOMContentLoaded', ()=>{ resize(); });
+</script>
+</body>
+</html>
