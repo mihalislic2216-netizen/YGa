@@ -3,8 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>2048: Эволюция и Рекорды</title>
-    <script src="https://yandex.ru/games/sdk/v2"></script>
+    <script>
+    (function() {
+        var s = document.createElement('script');
+        // На серверах Яндекса используем относительный путь /sdk.js
+        // На других хостах — абсолютный
+        s.src = (location.hostname.indexOf('yandex') !== -1 || location.hostname === 'localhost')
+            ? '/sdk.js'
+            : 'https://yandex.ru/games/sdk/v2';
+        s.onerror = function() {
+            // SDK не загрузился — запустим игру без него
+            window.__sdkFailed = true;
+        };
+        document.head.appendChild(s);
+    })();
+    </script>
     <style>
         :root {
             --bg: #bbada0;
@@ -88,6 +103,22 @@
         }
         .score-label { text-transform: uppercase; display: block; opacity: 0.85; font-weight: 700; }
         .score-val   { font-weight: bold; display: block; }
+        .header-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            margin-top: 6px;
+        }
+        .icon-btn {
+            border: none;
+            border-radius: 5px;
+            background: #8f7a66;
+            color: #fff;
+            font-family: inherit;
+            font-weight: 800;
+            cursor: pointer;
+            line-height: 1;
+        }
 
         /* ───── ИГРОВОЕ ПОЛЕ ───── */
         #game-container {
@@ -111,6 +142,14 @@
             justify-content: center;
             font-weight: bold;
             color: var(--text);
+            transition: transform .12s ease, box-shadow .12s ease;
+        }
+        .cell.new-tile {
+            animation: tile-pop .18s ease-out;
+        }
+        .cell.merged-tile {
+            animation: tile-merge .2s ease-out;
+            box-shadow: 0 0 18px rgba(246,94,59,.35);
         }
         .tile-2   { background: #eee4da; }
         .tile-4   { background: #ede0c8; }
@@ -123,6 +162,15 @@
         .tile-512 { background: #edc850; color: #fff; }
         .tile-1024{ background: #edc53f; color: #fff; }
         .tile-2048{ background: #edc22e; color: #fff; box-shadow: 0 0 20px rgba(237,194,46,.6); }
+        @keyframes tile-pop {
+            from { transform: scale(.72); opacity: .35; }
+            to   { transform: scale(1); opacity: 1; }
+        }
+        @keyframes tile-merge {
+            0%   { transform: scale(1); }
+            55%  { transform: scale(1.12); }
+            100% { transform: scale(1); }
+        }
 
         /* ───── КНОПКИ ───── */
         .game-btn {
@@ -135,6 +183,13 @@
             width: 100%;
         }
         #reward-btn  { background: #2ecc71; visibility: hidden; }
+        .action-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        #shop-btn { background: #8f7a66; }
+        #undo-btn { background: #3d8bfd; }
         #auth-banner {
             display: none;
             background: #f0e9e0;
@@ -157,7 +212,8 @@
         }
 
         /* ───── МОДАЛКА ───── */
-        #modal {
+        #modal,
+        #shop-modal {
             display: none;
             position: fixed;
             inset: 0;
@@ -166,13 +222,20 @@
             justify-content: center;
             align-items: center;
             text-align: center;
+            padding:
+                max(14px, env(safe-area-inset-top, 0px))
+                max(14px, env(safe-area-inset-right, 0px))
+                max(14px, env(safe-area-inset-bottom, 0px))
+                max(14px, env(safe-area-inset-left, 0px));
         }
         .modal-content {
-            background: white;
-            padding: 24px;
+            background: #fffdf8;
+            padding: 22px;
             border-radius: 10px;
-            width: 80%;
-            max-width: 300px;
+            width: min(420px, 100%);
+            max-height: calc(100dvh - 28px);
+            overflow: auto;
+            box-shadow: 0 18px 44px rgba(64,49,38,.28);
         }
         .modal-content h2 { color: var(--text); margin-bottom: 8px; }
         .modal-content p  { color: var(--text); margin-bottom: 12px; }
@@ -187,6 +250,88 @@
             cursor: pointer;
             font-family: inherit;
         }
+        .shop-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+        .shop-list button {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            text-align: left;
+            padding: 12px;
+            background: linear-gradient(180deg, #fff7e8, #f4eadc);
+            border: 2px solid #e2d2c0;
+            border-radius: 8px;
+            color: var(--text);
+            font-family: inherit;
+            cursor: pointer;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 4px 0 #d2bfae;
+            transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+        }
+        .shop-list button:active:not(:disabled) {
+            transform: translateY(2px);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 2px 0 #d2bfae;
+        }
+        .shop-list button:disabled {
+            opacity: .62;
+            cursor: default;
+            box-shadow: none;
+        }
+        .shop-main {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 4px 10px;
+            align-items: center;
+            min-width: 0;
+        }
+        .shop-icon {
+            grid-row: span 2;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            background: #8f7a66;
+            color: #fff;
+            font-size: 19px;
+            line-height: 1;
+        }
+        .shop-name {
+            font-weight: 900;
+            line-height: 1.1;
+        }
+        .shop-desc {
+            font-size: 12px;
+            line-height: 1.2;
+            color: #8f857b;
+            overflow-wrap: anywhere;
+        }
+        .shop-price {
+            background: var(--accent);
+            color: #fff;
+            border-radius: 999px;
+            padding: 7px 10px;
+            font-weight: 900;
+            opacity: 1;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .shop-owned {
+            margin-top: 10px;
+            color: var(--text);
+            font-weight: 700;
+            line-height: 1.35;
+        }
+        @media (max-width: 380px) {
+            .modal-content { padding: 16px; }
+            .shop-list button {
+                align-items: stretch;
+                flex-direction: column;
+            }
+            .shop-price {
+                align-self: flex-start;
+            }
+        }
     </style>
 </head>
 <body oncontextmenu="return false;">
@@ -198,6 +343,10 @@
                 <span class="title-num">2048</span><span class="title-colon">:</span>
             </div>
             <span class="title-sub" id="title-sub">Эволюция и Рекорды</span>
+            <div class="header-actions">
+                <button class="icon-btn" id="shop-btn" aria-label="Магазин">🛒</button>
+                <button class="icon-btn" id="sound-btn" aria-label="Выключить звук">🔊</button>
+            </div>
         </div>
         <div class="score-container" id="score-container">
             <div class="score-box" id="box-score">
@@ -215,11 +364,51 @@
         <div class="grid" id="grid"></div>
     </div>
 
-    <button class="game-btn" id="reward-btn">X2 Score 📺</button>
+    <div class="action-row">
+        <button class="game-btn" id="reward-btn">Удвоить счет 📺</button>
+        <button class="game-btn" id="undo-btn">Отмена: 0</button>
+    </div>
 
     <div id="auth-banner">
         <span id="auth-text">Войдите чтобы сохранить рекорд в таблицу</span>
         <button id="auth-btn">Войти 🏆</button>
+    </div>
+</div>
+
+<div id="shop-modal">
+    <div class="modal-content">
+        <h2 id="shop-title">Магазин</h2>
+        <p id="shop-body">Бонусы сохраняются в профиле после входа.</p>
+        <div class="shop-list">
+            <button id="buy-no-ads">
+                <span class="shop-main">
+                    <span class="shop-icon">🚫</span>
+                    <span class="shop-name" id="txt-no-ads">Без рекламы на 30 дней</span>
+                    <span class="shop-desc" id="desc-no-ads">Отключает fullscreen-рекламу и продлевает срок</span>
+                </span>
+                <span class="shop-price" id="price-no-ads">—</span>
+            </button>
+            <button id="buy-chances">
+                <span class="shop-main">
+                    <span class="shop-icon">✨</span>
+                    <span class="shop-name" id="txt-chances">3 вторых шанса</span>
+                    <span class="shop-desc" id="desc-chances">Продолжить после проигрыша без рекламы</span>
+                </span>
+                <span class="shop-price" id="price-chances">—</span>
+            </button>
+            <button id="buy-undos">
+                <span class="shop-main">
+                    <span class="shop-icon">↩</span>
+                    <span class="shop-name" id="txt-undos">5 отмен хода</span>
+                    <span class="shop-desc" id="desc-undos">Вернуть предыдущий ход</span>
+                </span>
+                <span class="shop-price" id="price-undos">—</span>
+            </button>
+        </div>
+        <p class="shop-owned" id="shop-owned"></p>
+        <div class="controls">
+            <button id="shop-close" style="background:#8f857b;">Закрыть</button>
+        </div>
     </div>
 </div>
 
@@ -229,6 +418,8 @@
         <p  id="modal-body"></p>
         <div class="controls">
             <button id="btn-extra"   style="display:none; background:#2ecc71;">Второй шанс 📺</button>
+            <button id="btn-paid-extra" style="display:none; background:#3d8bfd;">Второй шанс: 0</button>
+            <button id="btn-buy-chances" style="display:none; background:#8f7a66;">Купить 3 шанса</button>
             <button id="btn-auth-modal" style="display:none; background:#8f857b;">Войти и сохранить 🏆</button>
             <button id="btn-restart">Начать заново</button>
         </div>
@@ -240,20 +431,52 @@
 
 /* ─── STATE ─── */
 let sdk, player, lang = 'ru';
+let payments = null;
+let catalog = {};
 let board = Array(16).fill(0);
+let previousBoard = null;
+let newTileIndex = -1;
+let mergedTileIndexes = [];
 let score = 0, highScore = 0;
 let isRewardUsed = false, isSecondChanceUsed = false;
+let isMuted = false;
+let audioCtx = null;
+let purchases = {
+    noAdsUntil: 0,
+    secondChances: 0,
+    undos: 0
+};
+const PRODUCTS = {
+    noAds: 'no_ads_month',
+    chances: 'second_chance_3',
+    undos: 'undo_5'
+};
+const LEGACY_NO_ADS_PRODUCT = 'no_ads';
+const NO_ADS_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const CONSUMABLE_PRODUCTS = [PRODUCTS.noAds, LEGACY_NO_ADS_PRODUCT, PRODUCTS.chances, PRODUCTS.undos];
 
 /* ─── I18N ─── */
 const i18n = {
     ru: { score:'Счет', best:'Рекорд', over:'Игра окончена', restart:'Заново',
           second:'Второй шанс 📺', x2:'Удвоить счет 📺', sub:'Эволюция и Рекорды',
           authText:'Войдите чтобы сохранить рекорд в таблицу', authBtn:'Войти 🏆',
-          authModal:'Войти и сохранить 🏆' },
+          authModal:'Войти и сохранить 🏆', shop:'Магазин', close:'Закрыть',
+          shopBody:'Бонусы сохраняются в профиле после входа.', noAds:'Без рекламы на 30 дней',
+          chances:'3 вторых шанса', undos:'5 отмен хода', paidSecond:'Второй шанс',
+          noAdsDesc:'Отключает fullscreen-рекламу и продлевает срок', chancesDesc:'Продолжить после проигрыша без рекламы',
+          undosDesc:'Вернуть предыдущий ход',
+          buyChances:'Купить 3 шанса', undo:'Отмена', owned:'Без рекламы: {ads}. Шансы: {chances}. Отмены: {undos}.',
+          unavailable:'Недоступно', loading:'Загрузка', activeUntil:'до {date}', inactive:'нет', yes:'да', no:'нет', soundOn:'Выключить звук', soundOff:'Включить звук' },
     en: { score:'Score', best:'Best', over:'Game Over', restart:'Restart',
-          second:'Second Chance 📺', x2:'Double Score 📺', sub:'Evolution & Records',
+          second:'Second Chance 📺', x2:'Удвоить счет 📺', sub:'Evolution & Records',
           authText:'Sign in to save your score to the leaderboard', authBtn:'Sign in 🏆',
-          authModal:'Sign in & Save 🏆' }
+          authModal:'Sign in & Save 🏆', shop:'Shop', close:'Close',
+          shopBody:'Bonuses are saved to your profile after sign-in.', noAds:'No ads for 30 days',
+          chances:'3 second chances', undos:'5 undos', paidSecond:'Second chance',
+          noAdsDesc:'Disables fullscreen ads and extends the term', chancesDesc:'Continue after game over without ads',
+          undosDesc:'Return to the previous move',
+          buyChances:'Buy 3 chances', undo:'Undo', owned:'No ads: {ads}. Chances: {chances}. Undos: {undos}.',
+          unavailable:'Unavailable', loading:'Loading', activeUntil:'until {date}', inactive:'no', yes:'yes', no:'no', soundOn:'Mute sound', soundOff:'Enable sound' }
 };
 
 /* ─── RESIZE ─── */
@@ -265,11 +488,11 @@ function resize() {
     const vh  = vvp ? vvp.height : document.documentElement.clientHeight;
 
     const isLandscape  = vw > vh;
-    const headerRatio  = isLandscape ? 0.18 : 0.14;
+    const headerRatio  = isLandscape ? 0.22 : 0.26;
     const gapRatio     = isLandscape ? 0.02  : 0.025;
     const sidePad      = (vw < 600) ? Math.round(vw * 0.05) : 0;
     const fieldW       = vw - sidePad * 2;
-    // Всегда резервируем место под кнопку удвоения (10% высоты + зазоры)
+    // Всегда резервируем место под ряд бонусов (10% высоты + зазоры)
     // чтобы поле не прыгало когда кнопка появляется
     const btnRatio     = 0.10;
     const reservedH    = vh * (headerRatio + btnRatio + gapRatio * 4);
@@ -293,27 +516,34 @@ function resize() {
     field.style.borderRadius = Math.round(S * 0.015) + 'px';
     document.querySelector('.grid').style.gap = gap + 'px';
 
-    // Хедер — высота = S * headerRatio
-    const hH = Math.round(S * headerRatio);
+    // Хедер выше счетчиков: в левом блоке есть название, подзаголовок и две кнопки.
+    const titleFs = Math.round(S * 0.105);
+    const subFs = Math.max(8, Math.round(titleFs * 0.27));
+    const iconSize = Math.max(24, Math.round(S * 0.075));
+    const hH = Math.max(
+        Math.round(S * headerRatio),
+        titleFs + subFs + iconSize + Math.round(S * 0.02) + 8
+    );
     header.style.height = hH + 'px';
 
     // Шрифт заголовка
-    const titleFs = Math.round(S * 0.105);
     document.querySelector('.title-num').style.fontSize   = titleFs + 'px';
     document.querySelector('.title-colon').style.fontSize = titleFs + 'px';
-    document.querySelector('.title-sub').style.fontSize   = Math.round(titleFs * 0.27) + 'px';
+    document.querySelector('.title-sub').style.fontSize   = subFs + 'px';
 
     // Score-боксы
     const sc = document.getElementById('score-container');
     const boxGap = Math.round(S * 0.015);
-    const boxW   = Math.round(S * 0.2);
+    const boxW   = Math.round(S * 0.185);
+    const scoreH = Math.round(S * (isLandscape ? 0.16 : 0.14));
     sc.style.gap = boxGap + 'px';
     ['box-score','box-best'].forEach(id => {
         const el = document.getElementById(id);
-        el.style.width        = boxW + 'px';
-        el.style.height       = hH + 'px';
+        el.style.minWidth     = boxW + 'px';
+        el.style.width        = 'auto';
+        el.style.height       = scoreH + 'px';
         el.style.borderRadius = Math.round(S * 0.012) + 'px';
-        el.style.padding      = '2px 6px';
+        el.style.padding      = '2px ' + Math.round(S * 0.02) + 'px';
     });
     const valFs = Math.round(S * 0.05);
     const lblFs = Math.round(S * 0.028);
@@ -324,13 +554,19 @@ function resize() {
     const btnH   = Math.round(S * 0.1);
     const btnFs  = Math.round(S * 0.04);
     const btnPad = Math.round(S * 0.025);
-    ['reward-btn'].forEach(id => {
+    ['reward-btn','undo-btn'].forEach(id => {
         const el = document.getElementById(id);
         el.style.height       = btnH + 'px';
         el.style.fontSize     = btnFs + 'px';
         el.style.borderRadius = Math.round(S * 0.012) + 'px';
         // В альбомной — добавляем отступ снизу чтобы кнопка не липла к краю
         el.style.marginBottom = isLandscape ? Math.round(vh * 0.04) + 'px' : '0px';
+    });
+    document.querySelector('.action-row').style.gap = boxGap + 'px';
+    document.querySelectorAll('.icon-btn').forEach(el => {
+        el.style.width = iconSize + 'px';
+        el.style.height = iconSize + 'px';
+        el.style.fontSize = Math.round(iconSize * 0.55) + 'px';
     });
     const ab = document.getElementById('auth-banner');
     ab.style.padding      = btnPad + 'px';
@@ -373,24 +609,178 @@ function gameplayStop() {
     if (sdk) sdk.features.GameplayAPI?.stop();
 }
 
-YaGames.init().then(_sdk => {
-    sdk = _sdk;
-    lang = sdk.environment.i18n.lang === 'ru' ? 'ru' : 'en';
-    applyLang();
-    // Game Ready API — вызываем сразу после init, до загрузки игрока
-    sdk.features.LoadingAPI?.ready();
-    sdk.adv.showFullscreenAdv();
-    return sdk.getPlayer();
-}).then(_player => {
-    player = _player;
-    return player.getData(['highScore']);
-}).then(data => {
-    if (data.highScore) highScore = data.highScore;
+function initSoundState() {
+    try { isMuted = localStorage.getItem('2048_muted') === '1'; } catch(e) { isMuted = false; }
+    updateSoundUI();
+}
+
+function updateSoundUI() {
+    const btn = document.getElementById('sound-btn');
+    if (!btn) return;
+    btn.textContent = isMuted ? '🔇' : '🔊';
+    btn.setAttribute('aria-label', isMuted ? i18n[lang].soundOff : i18n[lang].soundOn);
+}
+
+function toggleSound() {
+    isMuted = !isMuted;
+    try { localStorage.setItem('2048_muted', isMuted ? '1' : '0'); } catch(e){}
+    updateSoundUI();
+    if (!isMuted) playTone('move');
+}
+
+function playTone(type) {
+    if (isMuted) return;
+    try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const tones = {
+            move: [220, .035, .025],
+            merge: [330, .055, .04],
+            buy: [520, .08, .05],
+            fail: [130, .08, .035]
+        };
+        const [freq, duration, volume] = tones[type] || tones.move;
+        osc.frequency.value = freq;
+        osc.type = 'triangle';
+        gain.gain.value = volume;
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    } catch(e){}
+}
+
+function loadHighScore() {
+    try { return parseInt(localStorage.getItem('2048_hs')) || 0; } catch(e) { return 0; }
+}
+
+function loadLocalPurchases() {
+    try {
+        const raw = localStorage.getItem('2048_purchases');
+        return normalizePurchases(raw ? JSON.parse(raw) : {});
+    } catch(e) {
+        return normalizePurchases({});
+    }
+}
+
+function normalizePurchases(data) {
+    const legacyNoAdsUntil = data.noAds ? Date.now() + NO_ADS_DURATION_MS : 0;
+    return {
+        noAdsUntil: Math.max(parseInt(data.noAdsUntil) || 0, legacyNoAdsUntil),
+        secondChances: Math.max(0, parseInt(data.secondChances) || 0),
+        undos: Math.max(0, parseInt(data.undos) || 0)
+    };
+}
+
+function mergePurchases(a, b) {
+    return {
+        noAdsUntil: Math.max(parseInt(a.noAdsUntil) || 0, parseInt(b.noAdsUntil) || 0),
+        secondChances: Math.max(a.secondChances || 0, b.secondChances || 0),
+        undos: Math.max(a.undos || 0, b.undos || 0)
+    };
+}
+
+function isNoAdsActive() {
+    return (parseInt(purchases.noAdsUntil) || 0) > Date.now();
+}
+
+function getNoAdsStatusText() {
+    const t = i18n[lang];
+    if (!isNoAdsActive()) return t.inactive;
+    const date = new Date(purchases.noAdsUntil).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+    return t.activeUntil.replace('{date}', date);
+}
+
+async function savePurchaseState() {
+    try { localStorage.setItem('2048_purchases', JSON.stringify(purchases)); } catch(e){}
+    updateBonusUI();
+    if (isAuthorized() && player.setData) {
+        try { await player.setData({ purchases }, true); } catch(e){}
+    }
+}
+
+async function syncPurchases() {
+    purchases = mergePurchases(purchases, loadLocalPurchases());
+    if (isAuthorized() && player.getData) {
+        try {
+            const data = await player.getData(['purchases']);
+            if (data && data.purchases) purchases = mergePurchases(purchases, normalizePurchases(data.purchases));
+        } catch(e){}
+    }
+    if (payments) {
+        try {
+            const products = await payments.getCatalog();
+            catalog = products.reduce((acc, item) => {
+                acc[item.id] = item;
+                return acc;
+            }, {});
+        } catch(e) {
+            catalog = {};
+        }
+        try {
+            const pending = await payments.getPurchases();
+            for (const purchase of pending) {
+                const productId = getPurchaseProductId(purchase);
+                if (productId) await applyPurchase(productId, false);
+                if (purchase.purchaseToken && CONSUMABLE_PRODUCTS.indexOf(productId) !== -1) {
+                    await savePurchaseState();
+                    await payments.consumePurchase(purchase.purchaseToken);
+                }
+            }
+        } catch(e){}
+    }
+    await savePurchaseState();
+}
+
+function getPurchaseProductId(purchase) {
+    return purchase.productID || purchase.productId || purchase.product?.id || purchase.id;
+}
+
+async function applyPurchase(productId, save = true) {
+    if (productId === PRODUCTS.noAds || productId === LEGACY_NO_ADS_PRODUCT) {
+        purchases.noAdsUntil = Math.max(Date.now(), parseInt(purchases.noAdsUntil) || 0) + NO_ADS_DURATION_MS;
+    }
+    if (productId === PRODUCTS.chances) purchases.secondChances += 3;
+    if (productId === PRODUCTS.undos) purchases.undos += 5;
+    playTone('buy');
+    updateBonusUI();
+    if (save) await savePurchaseState();
+}
+
+async function buyProduct(productId) {
+    if (!payments) {
+        updateStoreUI(i18n[lang].unavailable);
+        return;
+    }
+    gameplayStop();
+    try {
+        const purchase = await payments.purchase({ id: productId });
+        await applyPurchase(productId);
+        const token = purchase && purchase.purchaseToken;
+        if (token && CONSUMABLE_PRODUCTS.indexOf(productId) !== -1) await payments.consumePurchase(token);
+    } catch(e) {
+        // Игрок отменил покупку или платежи временно недоступны.
+    } finally {
+        gameplayStart();
+    }
+}
+
+function startWithoutSDK() {
+    highScore = loadHighScore();
+    purchases = mergePurchases(purchases, loadLocalPurchases());
+    updateBonusUI();
     initGame();
-}).catch(() => {
-    try { const v = localStorage.getItem('2048_hs'); if (v) highScore = +v || 0; } catch(e){}
-    initGame();
-});
+    if (highScore > 0) document.getElementById('auth-banner').style.display = 'flex';
+}
+
+
 
 /* ─── LANG ─── */
 function applyLang() {
@@ -404,15 +794,69 @@ function applyLang() {
     document.getElementById('auth-text').textContent      = t.authText;
     document.getElementById('auth-btn').textContent       = t.authBtn;
     document.getElementById('btn-auth-modal').textContent = t.authModal;
+    document.getElementById('shop-title').textContent     = t.shop;
+    document.getElementById('shop-body').textContent      = t.shopBody;
+    document.getElementById('txt-no-ads').textContent     = t.noAds;
+    document.getElementById('txt-chances').textContent    = t.chances;
+    document.getElementById('txt-undos').textContent      = t.undos;
+    document.getElementById('desc-no-ads').textContent    = t.noAdsDesc;
+    document.getElementById('desc-chances').textContent   = t.chancesDesc;
+    document.getElementById('desc-undos').textContent     = t.undosDesc;
+    document.getElementById('btn-buy-chances').textContent = t.buyChances;
+    document.getElementById('shop-close').textContent     = t.close;
+    updateBonusUI();
+    updateSoundUI();
+    updateStoreUI();
+}
+
+function getProductPrice(productId) {
+    const product = catalog[productId];
+    return product ? (product.price || product.priceValue || product.priceCurrencyCode || product.title || '') : '';
+}
+
+function updateStoreUI(message) {
+    const t = i18n[lang];
+    const fallback = payments ? t.loading : t.unavailable;
+    const priceNoAds = getProductPrice(PRODUCTS.noAds) || fallback;
+    const priceChances = getProductPrice(PRODUCTS.chances) || fallback;
+    const priceUndos = getProductPrice(PRODUCTS.undos) || fallback;
+    document.getElementById('price-no-ads').textContent = priceNoAds;
+    document.getElementById('price-chances').textContent = priceChances;
+    document.getElementById('price-undos').textContent = priceUndos;
+    document.getElementById('buy-no-ads').disabled = !payments;
+    document.getElementById('buy-chances').disabled = !payments;
+    document.getElementById('buy-undos').disabled = !payments;
+    document.getElementById('shop-owned').textContent = message || t.owned
+        .replace('{ads}', getNoAdsStatusText())
+        .replace('{chances}', purchases.secondChances)
+        .replace('{undos}', purchases.undos);
+}
+
+function updateBonusUI() {
+    const t = i18n[lang];
+    document.getElementById('undo-btn').textContent = t.undo + ': ' + purchases.undos;
+    document.getElementById('btn-paid-extra').textContent = t.paidSecond + ': ' + purchases.secondChances;
+    document.getElementById('btn-paid-extra').style.display =
+        (!isSecondChanceUsed && purchases.secondChances > 0) ? 'block' : 'none';
+    updateStoreUI();
 }
 
 /* ─── GAME ─── */
 function initGame() {
     board = Array(16).fill(0);
+    previousBoard = null;
+    newTileIndex = -1;
+    mergedTileIndexes = [];
     score = 0; isRewardUsed = false; isSecondChanceUsed = false;
-    document.getElementById('modal').style.display      = 'none';
-    document.getElementById('reward-btn').style.visibility = 'hidden';
-    document.getElementById('auth-banner').style.display= 'none';
+    document.getElementById('modal').style.display         = 'none';
+    document.getElementById('reward-btn').style.visibility  = 'hidden';
+    if (isAuthorized()) {
+        hideAuthUI();
+    } else {
+        document.getElementById('btn-auth-modal').style.display = 'none';
+        // Баннер только если есть рекорд для сохранения
+        document.getElementById('auth-banner').style.display = highScore > 0 ? 'flex' : 'none';
+    }
     resize();
     addTile(); addTile(); render();
     gameplayStart(); // геймплей начался
@@ -420,7 +864,10 @@ function initGame() {
 
 function addTile() {
     const empty = board.map((v,i) => v===0?i:null).filter(v=>v!==null);
-    if (empty.length) board[empty[Math.floor(Math.random()*empty.length)]] = Math.random()>.1 ? 2 : 4;
+    if (empty.length) {
+        newTileIndex = empty[Math.floor(Math.random()*empty.length)];
+        board[newTileIndex] = Math.random()>.1 ? 2 : 4;
+    }
 }
 
 function render() {
@@ -434,9 +881,11 @@ function render() {
     const cellS  = (S - pad * 2 - gap * 3) / 4;
     const cellFs = Math.round(cellS * 0.45);
 
-    board.forEach(val => {
+    board.forEach((val, idx) => {
         const cell = document.createElement('div');
         cell.className   = 'cell' + (val ? ' tile-'+val : '');
+        if (idx === newTileIndex) cell.className += ' new-tile';
+        if (mergedTileIndexes.indexOf(idx) !== -1) cell.className += ' merged-tile';
         cell.textContent = val || '';
         cell.style.fontSize     = cellFs + 'px';
         cell.style.borderRadius = Math.round(cellS * 0.08) + 'px';
@@ -446,10 +895,16 @@ function render() {
     document.getElementById('high-score').textContent = highScore;
     if (score >= 500 && !isRewardUsed) document.getElementById('reward-btn').style.visibility = 'visible';
     if (score > 0 && board.includes(2048)) saveStats();
+    updateBonusUI();
+    mergedTileIndexes = [];
 }
 
 function move(dir) {
     let changed = false;
+    const beforeMove = board.slice();
+    const beforeScore = score;
+    mergedTileIndexes = [];
+    newTileIndex = -1;
     const N = 4;
     for (let i = 0; i < N; i++) {
         let row = [];
@@ -467,10 +922,19 @@ function move(dir) {
         for (let j = 0; j < N; j++) {
             const idx = (dir==='UP'||dir==='DOWN') ? j*N+i : i*N+j;
             if (board[idx]!==r[j]) changed=true;
+            if (r[j] && board[idx] !== r[j] && row.filter(v => v === r[j] / 2).length >= 2) mergedTileIndexes.push(idx);
             board[idx]=r[j];
         }
     }
-    if (changed) { addTile(); render(); checkEnd(); }
+    if (changed) {
+        previousBoard = { board: beforeMove, score: beforeScore };
+        addTile();
+        render();
+        playTone(score > beforeScore ? 'merge' : 'move');
+        checkEnd();
+    } else {
+        playTone('fail');
+    }
 }
 
 function checkEnd() {
@@ -479,6 +943,7 @@ function checkEnd() {
         if (i%4!==3 && board[i]===board[i+1]) return;
         if (i<12   && board[i]===board[i+4]) return;
     }
+    gameplayStop();
     saveStats();
     showModal(i18n[lang].over, !isSecondChanceUsed);
 }
@@ -488,52 +953,111 @@ function showModal(title, extra) {
     document.getElementById('modal-title').textContent      = title;
     document.getElementById('modal-body').textContent       = i18n[lang].score + ': ' + score;
     document.getElementById('btn-extra').style.display      = extra ? 'block' : 'none';
-    document.getElementById('btn-auth-modal').style.display = !isAuthorized() ? 'block' : 'none';
+    document.getElementById('btn-paid-extra').style.display = (extra && purchases.secondChances > 0) ? 'block' : 'none';
+    document.getElementById('btn-buy-chances').style.display = (extra && purchases.secondChances <= 0 && payments) ? 'block' : 'none';
+    document.getElementById('btn-auth-modal').style.display = (!isAuthorized() && highScore > 0) ? 'block' : 'none';
+    updateBonusUI();
+}
+
+async function useSecondChance(isPaid) {
+    if (isPaid) {
+        if (purchases.secondChances <= 0) return;
+        purchases.secondChances -= 1;
+        await savePurchaseState();
+    }
+    isSecondChanceUsed = true;
+    const occ = board.map((v,i)=>v?i:null).filter(v=>v!==null);
+    occ.sort(()=>Math.random()-.5).slice(0,4).forEach(i=>board[i]=0);
+    document.getElementById('modal').style.display = 'none';
+    render();
+    playTone('buy');
+    gameplayStart();
 }
 
 /* ─── BUTTONS ─── */
 document.getElementById('btn-restart').onclick = () => {
     saveStats();
-    if (sdk) sdk.adv.showFullscreenAdv({ callbacks:{
-        onOpen:  () => gameplayStop(),  // реклама показывается
-        onClose: () => initGame()       // initGame вызывает gameplayStart
+    gameplayStop();
+    if (isNoAdsActive()) initGame();
+    else if (sdk) sdk.adv.showFullscreenAdv({ callbacks:{
+        onClose: (wasShown) => initGame(),
+        onError: () => initGame()
     }});
     else initGame();
 };
 
 document.getElementById('btn-extra').onclick = () => {
-    if (!sdk) return;
-    sdk.adv.showRewardedVideo({ callbacks:{ onRewarded() {
-        isSecondChanceUsed = true;
-        const occ = board.map((v,i)=>v?i:null).filter(v=>v!==null);
-        occ.sort(()=>Math.random()-.5).slice(0,4).forEach(i=>board[i]=0);
-        document.getElementById('modal').style.display = 'none';
-        render();
-    }}});
+    if (!sdk) { return; }
+    gameplayStop();
+    sdk.adv.showRewardedVideo({ callbacks:{
+        onRewarded() {
+            useSecondChance(false);
+        },
+        onClose(wasShown) { gameplayStart(); }
+    }});
 };
+
+document.getElementById('btn-paid-extra').onclick = () => useSecondChance(true);
+document.getElementById('btn-buy-chances').onclick = () => buyProduct(PRODUCTS.chances);
 
 document.getElementById('reward-btn').onclick = () => {
     if (!sdk) return;
-    sdk.adv.showRewardedVideo({ callbacks:{ onRewarded() {
-        score *= 2; isRewardUsed = true;
-        document.getElementById('reward-btn').style.visibility = 'hidden';
-        render();
-    }}});
+    gameplayStop();
+    sdk.adv.showRewardedVideo({ callbacks:{
+        onRewarded() {
+            score *= 2; isRewardUsed = true;
+            document.getElementById('reward-btn').style.visibility = 'hidden';
+            render();
+            playTone('buy');
+            gameplayStart();
+        },
+        onClose(wasShown) { gameplayStart(); }
+    }});
 };
+
+document.getElementById('undo-btn').onclick = async () => {
+    if (!previousBoard || purchases.undos <= 0) {
+        playTone('fail');
+        return;
+    }
+    purchases.undos -= 1;
+    board = previousBoard.board.slice();
+    score = previousBoard.score;
+    previousBoard = null;
+    newTileIndex = -1;
+    mergedTileIndexes = [];
+    await savePurchaseState();
+    render();
+    playTone('buy');
+};
+
+document.getElementById('shop-btn').onclick = () => {
+    updateStoreUI();
+    document.getElementById('shop-modal').style.display = 'flex';
+    gameplayStop();
+};
+
+document.getElementById('shop-close').onclick = () => {
+    document.getElementById('shop-modal').style.display = 'none';
+    gameplayStart();
+};
+
+document.getElementById('buy-no-ads').onclick = () => buyProduct(PRODUCTS.noAds);
+document.getElementById('buy-chances').onclick = () => buyProduct(PRODUCTS.chances);
+document.getElementById('buy-undos').onclick = () => buyProduct(PRODUCTS.undos);
+document.getElementById('sound-btn').onclick = toggleSound;
 
 document.getElementById('btn-auth-modal').onclick = () => {
     if (!sdk) return;
     document.getElementById('modal').style.display = 'none';
     sdk.auth.openAuthDialog()
-        .then(()=>sdk.getPlayer())
+        .then(() => sdk.getPlayer({ scopes: false }))
         .then(_p => {
             player = _p;
-            if (isAuthorized()) {
-                player.setData({ highScore });
-                sdk.getLeaderboards().then(l=>l.setLeaderboardScore('TopPlayers', highScore)).catch(()=>{});
-                document.getElementById('auth-banner').style.display = 'none';
-            }
-        }).catch(()=>{
+            syncPurchases();
+            saveToCloud(); // сохраняем рекорд сразу после входа
+        }).catch(() => {
+            // Если отменил авторизацию — возвращаем модалку
             document.getElementById('modal').style.display = 'flex';
         });
 };
@@ -541,47 +1065,64 @@ document.getElementById('btn-auth-modal').onclick = () => {
 document.getElementById('auth-btn').onclick = () => {
     if (!sdk) return;
     sdk.auth.openAuthDialog()
-        .then(()=>sdk.getPlayer())
+        .then(() => sdk.getPlayer({ scopes: false }))
         .then(_p => {
             player = _p;
-            if (isAuthorized()) {
-                player.setData({ highScore });
-                sdk.getLeaderboards().then(l=>l.setLeaderboardScore('TopPlayers', highScore)).catch(()=>{});
-                document.getElementById('auth-banner').style.display = 'none';
-            }
-        }).catch(()=>{});
+            syncPurchases();
+            saveToCloud(); // сохраняем рекорд сразу после входа
+        }).catch(() => {});
 };
 
 /* ─── SAVE ─── */
-function isAuthorized() { return player && player.getMode()!=='lite'; }
+function isAuthorized() { return player && player.isAuthorized(); }
+
+function hideAuthUI() {
+    document.getElementById('auth-banner').style.display    = 'none';
+    document.getElementById('btn-auth-modal').style.display = 'none';
+}
+
+function showAuthUI() {
+    document.getElementById('btn-auth-modal').style.display = 'block';
+    // Баннер только если есть что сохранять
+    if (highScore > 0) {
+        document.getElementById('auth-banner').style.display = 'flex';
+    }
+}
+
+function saveToCloud() {
+    if (!isAuthorized()) return;
+    player.setStats({ highScore });
+    if (sdk) {
+        sdk.isAvailableMethod('leaderboards.setScore').then(available => {
+            if (available) sdk.leaderboards.setScore('TopPlayers', highScore).catch(() => {});
+        }).catch(() => {});
+    }
+    hideAuthUI();
+}
 
 function saveStats() {
     if (score <= highScore) return;
     highScore = score;
     document.getElementById('high-score').textContent = highScore;
+    try { localStorage.setItem('2048_hs', highScore); } catch(e){}
     if (isAuthorized()) {
-        player.setData({ highScore });
-        if (sdk) sdk.getLeaderboards().then(l=>l.setLeaderboardScore('TopPlayers', highScore)).catch(()=>{});
-        document.getElementById('auth-banner').style.display  = 'none';
-        document.getElementById('btn-auth-modal').style.display = 'none';
+        saveToCloud();
     } else {
-        try { localStorage.setItem('2048_hs', highScore); } catch(e){}
-        // Показываем баннер только если модалка не открыта
-        const modalOpen = document.getElementById('modal').style.display === 'flex';
-        if (!modalOpen) document.getElementById('auth-banner').style.display = 'flex';
-        document.getElementById('btn-auth-modal').style.display = 'block';
+        showAuthUI();
     }
 }
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
         gameplayStop();
-        saveStats();
+        if (score > 0) saveStats();
     } else {
-        gameplayStart();
+        // Возобновляем только если игра активна (модалка не открыта)
+        const modalOpen = document.getElementById('modal').style.display === 'flex';
+        if (!modalOpen) gameplayStart();
     }
 });
-window.addEventListener('beforeunload', saveStats);
+window.addEventListener('beforeunload', () => { if (score > 0) saveStats(); });
 
 /* ─── INPUT ─── */
 const KEY = {
@@ -623,8 +1164,66 @@ window.addEventListener('touchend', e => {
 }, {passive:false});
 
 /* ─── INIT ─── */
-// Запускаем resize как только DOM готов, без ожидания SDK
-document.addEventListener('DOMContentLoaded', ()=>{ resize(); });
+document.addEventListener('DOMContentLoaded', () => {
+    initSoundState();
+    purchases = mergePurchases(purchases, loadLocalPurchases());
+    updateBonusUI();
+    resize();
+    // Если SDK уже загружен или не нужен — инициализируем сразу
+    if (typeof YaGames !== 'undefined') {
+        initSDK();
+    } else if (window.__sdkFailed) {
+        startWithoutSDK();
+    } else {
+        // Ждём загрузки SDK максимум 3 секунды
+        var attempts = 0;
+        var interval = setInterval(() => {
+            attempts++;
+            if (typeof YaGames !== 'undefined') {
+                clearInterval(interval);
+                initSDK();
+            } else if (attempts > 30 || window.__sdkFailed) {
+                clearInterval(interval);
+                startWithoutSDK();
+            }
+        }, 100);
+    }
+});
+
+async function initSDK() {
+    try {
+        const _sdk = await YaGames.init();
+        sdk = _sdk;
+        lang = sdk.environment.i18n.lang === 'ru' ? 'ru' : 'en';
+        applyLang();
+        sdk.features.LoadingAPI?.ready();
+        try {
+            payments = await sdk.getPayments();
+        } catch(e) {
+            payments = null;
+        }
+        sdk.getStorage().then(ss => {
+            try { Object.defineProperty(window, 'localStorage', { get: () => ss }); } catch(e){}
+        }).catch(() => {});
+        const _player = await sdk.getPlayer({ scopes: false });
+        player = _player;
+        await syncPurchases();
+        if (player.isAuthorized()) {
+            const data = await player.getStats(['highScore']);
+            const cloud = (data && data.highScore) ? parseInt(data.highScore) || 0 : 0;
+            highScore = Math.max(cloud, loadHighScore());
+        } else {
+            highScore = loadHighScore();
+        }
+        initGame();
+    } catch(e) {
+        highScore = loadHighScore();
+        purchases = mergePurchases(purchases, loadLocalPurchases());
+        updateBonusUI();
+        initGame();
+        if (highScore > 0) document.getElementById('auth-banner').style.display = 'flex';
+    }
+}
 </script>
 </body>
 </html>
